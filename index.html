@@ -21,6 +21,14 @@
     border: 2px solid rgba(255,255,255,.9); border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,.4); pointer-events: none; }
   #startcam { position: fixed; left: 50%; top: 45%; transform: translate(-50%,-50%); display: none; border: 0; border-radius: 999px;
     padding: 12px 26px; font: inherit; font-size: 16px; background: #fff; color: #222; }
+  /* 横屏：画面矮，按钮和提示挪到右边竖着排，不挡住山 */
+  @media (orientation: landscape) {
+    .bottom { left: auto; bottom: auto; top: 50%; transform: translateY(-50%);
+      right: max(16px, env(safe-area-inset-right)); width: 168px; gap: 10px; }
+    #msg { max-width: 168px; }
+    #place { padding: 12px 0; width: 100%; font-size: 16px; }
+    #reticle { top: 60%; left: calc(50% - 84px); }
+  }
   .wm { position: fixed; right: 12px; top: calc(10px + env(safe-area-inset-top)); font-size: 11px; opacity: .6; pointer-events: none; }
 </style>
 </head>
@@ -64,8 +72,13 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.setClearColor(0x000000, 0);
 document.body.insertBefore(renderer.domElement, reticle);
 const scene = new THREE.Scene();
-// 手机主摄竖拿时纵向视角约 65°；人手里的手机离地约 1.3 米
-const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.01, 100);
+// 手机主摄沿长边的视角约 65°：竖屏时是纵向，横屏时是横向（纵向按宽高比换算）。人手里的手机离地约 1.3 米
+const LONG_FOV = 65;
+function fitFov() {
+  const a = innerWidth / innerHeight;
+  return a < 1 ? LONG_FOV : 2 * Math.atan(Math.tan(LONG_FOV * Math.PI / 360) / a) * 180 / Math.PI;
+}
+const camera = new THREE.PerspectiveCamera(fitFov(), innerWidth / innerHeight, 0.01, 100);
 camera.position.set(0, 1.3, 0);
 
 const holder = new THREE.Group();   // 放置后的位置和朝向
@@ -168,11 +181,16 @@ renderer.setAnimationLoop(() => {
   applyOrientation();
   renderer.render(scene, camera);
 });
-addEventListener('resize', () => {
+// 横竖屏切换：重新算画面比例和视角；有的手机转屏后尺寸晚一点才更新，稍后再算一次
+function onResize() {
   camera.aspect = innerWidth / innerHeight;
+  camera.fov = fitFov();
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-});
+}
+addEventListener('resize', onResize);
+addEventListener('orientationchange', () => setTimeout(onResize, 300));
+if (screen.orientation) screen.orientation.addEventListener('change', () => setTimeout(onResize, 300));
 window.__dbg = { camera, holder, setOri: (a, b, g) => { ori = { alpha: a, beta: b, gamma: g }; } };
 </script>
 </body>
