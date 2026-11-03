@@ -14,8 +14,9 @@
   canvas { position: fixed; inset: 0; touch-action: none; }
   /* 界面层：始终按横屏排版。浏览器停在竖屏时（锁定方向、微信里）整层转 90°，人横拿手机看是正的 */
   #ui { position: fixed; left: 0; top: 0; pointer-events: none; transform-origin: 0 0; overflow: hidden; }
-  .side { position: absolute; right: max(18px, env(safe-area-inset-right)); top: 50%; transform: translateY(-50%);
-    width: 170px; display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+  /* 放置按钮在画面最下方正中 */
+  .side { position: absolute; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    width: 190px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
   #msg { font-size: 13px; line-height: 1.5; padding: 7px 11px; border-radius: 8px; background: rgba(0,0,0,.5); text-align: center; }
   #msg:empty { display: none; }
   #place { pointer-events: auto; border: 0; border-radius: 999px; padding: 13px 0; font: inherit; font-size: 17px; font-weight: 600;
@@ -177,6 +178,17 @@ async function firstTouch() {
 }
 addEventListener('pointerdown', firstTouch, { capture: true });
 
+// 人看到的横屏画面里的一点（ux, uy）→ 屏幕像素坐标（界面转了 90° 时要换算）
+function userToScreen(ux, uy) {
+  if (!forced()) return [ux, uy];
+  return rot === 90 ? [innerWidth - uy, ux] : [uy, innerHeight - ux];
+}
+// 放置圆圈的位置：画面下方正中、放置按钮上面一点（贴着近处地面，不在半空）
+function aimScreen() {
+  const uw = forced() ? innerHeight : innerWidth, uh = forced() ? innerWidth : innerHeight;
+  return userToScreen(uw / 2, uh - 115);
+}
+
 // ---------------- 选位置：屏幕上一点 → 地面（y=0）上的一点
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), hit = new THREE.Vector3();
 const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -213,7 +225,7 @@ place.onclick = async (e) => {
   await firstTouch();
   applyOrientation();
   if (holder.visible) { startAiming(); return; }
-  placeAt(groundPoint(innerWidth / 2, innerHeight / 2, hit).clone());
+  placeAt(groundPoint(...aimScreen(), hit).clone());
 };
 
 // ---------------- 手势：选位置时点一下就放到那里；放好后单指转、双指缩放
@@ -261,7 +273,7 @@ renderer.setAnimationLoop(() => {
   applyOrientation();
   if (loaded && !holder.visible) {
     aim.visible = true;
-    aim.position.copy(groundPoint(innerWidth / 2, innerHeight / 2, hit));
+    aim.position.copy(groundPoint(...aimScreen(), hit));
     aim.scale.setScalar(Math.max(0.6, aim.position.distanceTo(camera.position) / 2));
   }
   renderer.render(scene, camera);
