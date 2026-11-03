@@ -35,7 +35,7 @@
 <div id="ui">
   <div id="wm"></div>
   <button id="startcam">点击开启相机</button>
-  <div class="side"><div id="msg">正在打开相机…</div><button id="place" disabled>模型加载中…</button></div>
+  <div class="side"><div id="msg"></div><button id="place" disabled>模型加载中…</button></div>
 </div>
 <script type="module">
 import * as THREE from './lib/three.module.js';
@@ -45,7 +45,7 @@ import { DRACOLoader } from './lib/DRACOLoader.js';
 const $ = (id) => document.getElementById(id);
 const video = $('cam'), msg = $('msg'), place = $('place'), startcam = $('startcam'), ui = $('ui');
 $('wm').innerHTML = '<span>星界智教 未完成作品</span>'.repeat(60);
-const HINT_AIM = '横拿手机，对准地面：点地面上任意位置，或点「放置」放到圆圈处';
+const HINT_AIM = '';  // 不显示操作提示小字
 
 // ---------------- 横屏界面：浏览器横过来就正常排；还停在竖屏时，按手机往哪边横着转界面
 let rot = 90;   // 竖屏窗口里界面转的角度：90（手机向左横）或 -90（向右横）
@@ -146,9 +146,16 @@ addEventListener('deviceorientation', (e) => {
 });
 const zee = new THREE.Vector3(0, 0, 1), q0 = new THREE.Quaternion(), q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 const euler = new THREE.Euler();
+const xAxis = new THREE.Vector3(1, 0, 0);
 function screenAngle() { return ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI / 180; }
 function applyOrientation() {
-  if (!ori) return;
+  if (!ori) {
+    // 拿不到陀螺仪数据（有的浏览器、微信里不给）：浏览器还是竖屏时就当手机是横拿、平视前方，
+    // 画面绕视线转 90°，山和地面都是横着的；浏览器自己横过来时不用转
+    // 另外略微低头约 17°（平常拿手机看地面的样子），放下的山正好在画面中间
+    camera.quaternion.setFromAxisAngle(xAxis, -0.3).multiply(q0.setFromAxisAngle(zee, forced() ? (rot === 90 ? Math.PI / 2 : -Math.PI / 2) : 0));
+    return;
+  }
   const d = Math.PI / 180;
   euler.set(ori.beta * d, ori.alpha * d, -ori.gamma * d, 'YXZ');
   camera.quaternion.setFromEuler(euler).multiply(q1).multiply(q0.setFromAxisAngle(zee, -screenAngle()));
@@ -192,7 +199,7 @@ function placeAt(p) {
   holder.visible = true;
   aim.visible = false;
   place.textContent = '重新选位置';
-  msg.textContent = ori ? '单指左右拖动旋转 · 双指缩放' : '单指左右拖动旋转 · 双指缩放（此手机没有陀螺仪数据，模型不会随手机转动固定）';
+  msg.textContent = '';
 }
 function startAiming() {
   holder.visible = false;
