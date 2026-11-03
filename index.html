@@ -72,12 +72,17 @@ const holder = new THREE.Group();   // 放置后的位置和朝向
 holder.visible = false;
 scene.add(holder);
 let model, mixer, loaded = false;
+// 水纹、水光贴图顺流慢慢滚动（每秒走多少个贴图周期）；水面网格不动，岸边不跟着晃
+const WATER_SCROLL = { '水纹1': [0.22, 0.03], '水纹2': [0.16, -0.025], '水光层': [0.14, 0.01] };
+const waterMaps = [];
 
 const draco = new DRACOLoader().setDecoderPath('./lib/draco/');
 new GLTFLoader().setDRACOLoader(draco).load('qljs.glb', (gltf) => {
   model = gltf.scene;
   model.traverse((o) => {
     if (!o.isMesh) return;
+    const k = WATER_SCROLL[o.name];
+    if (k && o.material.map) waterMaps.push([o.material.map, k]);
     if (o.material.transparent) { o.renderOrder = 2; o.material.depthWrite = false; }
   });
   holder.add(model);
@@ -158,6 +163,8 @@ const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
   if (mixer) mixer.update(dt);
+  const t = clock.elapsedTime;
+  for (const [map, [su, sv]] of waterMaps) map.offset.set((-t * su) % 1, (-t * sv) % 1);
   applyOrientation();
   renderer.render(scene, camera);
 });
