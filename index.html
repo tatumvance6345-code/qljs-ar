@@ -90,7 +90,7 @@ const WATER_SCROLL = { '水纹1': [0.22, 0.03], '水纹2': [0.16, -0.025], '水�
 const waterMaps = [];
 
 const draco = new DRACOLoader().setDecoderPath('./lib/draco/');
-new GLTFLoader().setDRACOLoader(draco).load('qljs.glb', (gltf) => {
+new GLTFLoader().setDRACOLoader(draco).load('qljs_v3.glb', (gltf) => {
   model = gltf.scene;
   model.traverse((o) => {
     if (!o.isMesh) return;
