@@ -2,49 +2,171 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>千里江山 AR</title>
-<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@4.0.0/dist/model-viewer.min.js"></script>
 <style>
-  :root { --silk: #efe8d6; --silk2: #d9cfb8; --ink: #2f3a35; --qinglv: #2a7f86; }
-  html, body { margin: 0; height: 100%; background: linear-gradient(var(--silk), var(--silk2)); color: var(--ink);
-    font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif; }
-  model-viewer { width: 100%; height: 100%; --poster-color: transparent; }
-  .head { position: fixed; top: 0; left: 0; right: 0; pointer-events: none;
-    padding: calc(12px + env(safe-area-inset-top)) 16px 0; }
-  .head h1 { margin: 0; font-size: 17px; letter-spacing: .08em; }
-  .head p { margin: 4px 0 0; font-size: 12px; opacity: .7; }
-  #ar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom));
-    border: 0; border-radius: 999px; padding: 12px 26px; font: inherit; font-size: 15px;
-    background: var(--qinglv); color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
-  #bar { position: fixed; left: 16px; right: 16px; top: 50%; text-align: center; font-size: 13px; opacity: .75; }
-  #tip { position: fixed; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 6px 12px; border-radius: 8px; background: rgba(255,252,244,.85); bottom: calc(80px + env(safe-area-inset-bottom));
-    text-align: center; font-size: 12px; } #tip:empty { display: none; }
-  .wm { position: fixed; right: 12px; bottom: calc(8px + env(safe-area-inset-bottom)); font-size: 11px; opacity: .45; pointer-events: none; }
+  :root { --qinglv: #2a7f86; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #fff;
+    font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif; -webkit-user-select: none; user-select: none; }
+  #cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  canvas { position: fixed; inset: 0; touch-action: none; }
+  .bottom { position: fixed; left: 0; right: 0; bottom: calc(28px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; }
+  #msg { font-size: 13px; padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.45); max-width: calc(100% - 32px); text-align: center; }
+  #msg:empty { display: none; }
+  #place { pointer-events: auto; border: 0; border-radius: 999px; padding: 14px 40px; font: inherit; font-size: 17px; font-weight: 600;
+    background: var(--qinglv); color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  #place:disabled { background: rgba(80,80,80,.8); }
+  #reticle { position: fixed; left: 50%; top: 62%; width: 90px; height: 34px; margin: -17px 0 0 -45px;
+    border: 2px solid rgba(255,255,255,.9); border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,.4); pointer-events: none; }
+  #startcam { position: fixed; left: 50%; top: 45%; transform: translate(-50%,-50%); display: none; border: 0; border-radius: 999px;
+    padding: 12px 26px; font: inherit; font-size: 16px; background: #fff; color: #222; }
+  .wm { position: fixed; right: 12px; top: calc(10px + env(safe-area-inset-top)); font-size: 11px; opacity: .6; pointer-events: none; }
 </style>
 </head>
 <body>
-<model-viewer id="mv" src="qljs.glb" alt="千里江山图 分层群山" ar ar-modes="webxr scene-viewer quick-look" ar-scale="auto"
-  ar-placement="floor" camera-controls touch-action="pan-y" autoplay shadow-intensity="0.6"
-  camera-orbit="0deg 82deg 0.95m" camera-target="0m 0.11m 0m" field-of-view="50deg" min-camera-orbit="auto auto 0.15m"
-  max-camera-orbit="auto auto 2.5m" tone-mapping="none" interaction-prompt="none">
-  <button slot="ar-button" id="ar">在 AR 中查看</button>
-  <div slot="progress-bar"></div>
-</model-viewer>
-<div class="head"><h1>千里江山 · 分层群山 AR</h1><p>拖动旋转 · 双指缩放 · 点下方按钮放到桌面或地面</p></div>
-<div id="bar">模型加载中…</div>
-<div id="tip"></div>
+<video id="cam" playsinline muted autoplay></video>
+<div id="reticle"></div>
+<button id="startcam">点击开启相机</button>
+<div class="bottom"><div id="msg">正在打开相机…</div><button id="place" disabled>模型加载中…</button></div>
 <div class="wm">太阳花 · 小样</div>
-<script>
-  const mv = document.getElementById('mv'), bar = document.getElementById('bar'), tip = document.getElementById('tip');
-  mv.addEventListener('progress', (e) => { const p = e.detail.totalProgress; bar.textContent = p < 1 ? `模型加载中… ${Math.round(p * 100)}%` : ''; });
-  mv.addEventListener('load', () => {
-    bar.textContent = '';
-    if (!mv.canActivateAR) tip.textContent = /MicroMessenger/i.test(navigator.userAgent)
-      ? '微信里打不开 AR：请点右上角「…」选择在浏览器中打开'
-      : '此浏览器不支持 AR：iPhone 请用 Safari，安卓请用 Chrome';
+<script type="module">
+import * as THREE from './lib/three.module.js';
+import { GLTFLoader } from './lib/GLTFLoader.js';
+import { DRACOLoader } from './lib/DRACOLoader.js';
+
+const $ = (id) => document.getElementById(id);
+const video = $('cam'), msg = $('msg'), place = $('place'), reticle = $('reticle'), startcam = $('startcam');
+
+// ---------------- 后置摄像头当背景
+async function openCamera() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    video.srcObject = s;
+    await video.play();
+    startcam.style.display = 'none';
+    msg.textContent = loaded ? '对准地面或桌面，点「放置」' : msg.textContent.replace('正在打开相机…', '');
+  } catch (e) {
+    startcam.style.display = 'block';
+    msg.textContent = /MicroMessenger/i.test(navigator.userAgent)
+      ? '相机没打开：请允许微信使用相机，或点右上角「…」在浏览器中打开'
+      : '相机没打开：请允许本网页使用相机后再点一次';
+  }
+}
+startcam.onclick = openCamera;
+openCamera();
+
+// ---------------- 三维场景（透明，叠在相机画面上）
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 0);
+document.body.insertBefore(renderer.domElement, reticle);
+const scene = new THREE.Scene();
+// 手机主摄竖拿时纵向视角约 65°；人手里的手机离地约 1.3 米
+const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.01, 100);
+camera.position.set(0, 1.3, 0);
+
+const holder = new THREE.Group();   // 放置后的位置和朝向
+holder.visible = false;
+scene.add(holder);
+let model, mixer, loaded = false;
+
+const draco = new DRACOLoader().setDecoderPath('./lib/draco/');
+new GLTFLoader().setDRACOLoader(draco).load('qljs.glb', (gltf) => {
+  model = gltf.scene;
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.material.transparent) { o.renderOrder = 2; o.material.depthWrite = false; }
   });
-  mv.addEventListener('ar-status', (e) => { if (e.detail.status === 'failed') tip.textContent = 'AR 启动失败，请换 Safari / Chrome 再试'; });
+  holder.add(model);
+  mixer = new THREE.AnimationMixer(model);
+  for (const clip of gltf.animations) mixer.clipAction(clip).play();
+  loaded = true;
+  place.disabled = false;
+  place.textContent = '放置';
+  if (video.srcObject) msg.textContent = '对准地面或桌面，点「放置」';
+}, (e) => {
+  if (e.total) place.textContent = `模型加载中 ${Math.round(e.loaded / e.total * 100)}%`;
+}, () => { place.textContent = '模型加载失败，请刷新'; });
+
+// ---------------- 陀螺仪：手机转动时相机跟着转，放好的模型就固定在原地
+let ori = null;
+addEventListener('deviceorientation', (e) => { if (e.alpha !== null) ori = e; });
+const zee = new THREE.Vector3(0, 0, 1), q0 = new THREE.Quaternion(), q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+const euler = new THREE.Euler();
+function screenAngle() { return ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI / 180; }
+function applyOrientation() {
+  if (!ori) return;
+  const d = Math.PI / 180;
+  euler.set(ori.beta * d, ori.alpha * d, -ori.gamma * d, 'YXZ');
+  camera.quaternion.setFromEuler(euler).multiply(q1).multiply(q0.setFromAxisAngle(zee, -screenAngle()));
+}
+async function askOrientation() {
+  const D = window.DeviceOrientationEvent;
+  if (D && typeof D.requestPermission === 'function') { try { await D.requestPermission(); } catch (e) {} }
+  // 等第一帧陀螺仪数据（最多半秒），没有陀螺仪就按当前画面放
+  for (let i = 0; i < 10 && !ori; i++) await new Promise((r) => setTimeout(r, 50));
+}
+
+// ---------------- 放置：放在镜头正前方地面上，模型正面朝人
+const DIST = 1.8;   // 放在前方 1.8 米
+const SCALE = 2.2;  // 默认约 4.4 米宽、半米高，转动手机可看两侧
+const fwd = new THREE.Vector3();
+place.onclick = async () => {
+  if (!loaded) return;
+  await askOrientation();
+  applyOrientation();
+  camera.getWorldDirection(fwd);
+  fwd.y = 0;
+  if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1);
+  fwd.normalize();
+  holder.position.set(camera.position.x + fwd.x * DIST, 0, camera.position.z + fwd.z * DIST);
+  holder.rotation.set(0, Math.atan2(-fwd.x, -fwd.z), 0);
+  holder.scale.setScalar(SCALE);
+  holder.visible = true;
+  reticle.style.display = 'none';
+  place.textContent = '重新放置';
+  msg.textContent = ori ? '单指左右拖动旋转 · 双指缩放' : '单指左右拖动旋转 · 双指缩放（此手机没有陀螺仪数据，模型不会随手机转动固定）';
+};
+
+// ---------------- 手势：单指转，双指缩放
+let drag = null, pinch = null;
+const pts = new Map();
+const cvs = renderer.domElement;
+cvs.addEventListener('pointerdown', (e) => { pts.set(e.pointerId, e); cvs.setPointerCapture(e.pointerId); startGesture(); });
+cvs.addEventListener('pointerup', (e) => { pts.delete(e.pointerId); startGesture(); });
+cvs.addEventListener('pointercancel', (e) => { pts.delete(e.pointerId); startGesture(); });
+function startGesture() {
+  const p = [...pts.values()];
+  drag = p.length === 1 ? { x: p[0].clientX, r: holder.rotation.y } : null;
+  pinch = p.length === 2 ? { d: Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY), s: holder.scale.x } : null;
+}
+cvs.addEventListener('pointermove', (e) => {
+  if (!pts.has(e.pointerId) || !holder.visible) return;
+  pts.set(e.pointerId, e);
+  const p = [...pts.values()];
+  if (drag && p.length === 1) holder.rotation.y = drag.r + (p[0].clientX - drag.x) / innerWidth * Math.PI * 1.5;
+  if (pinch && p.length === 2) {
+    const d = Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY);
+    holder.scale.setScalar(THREE.MathUtils.clamp(pinch.s * d / pinch.d, 0.3, 8));
+  }
+});
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  if (mixer) mixer.update(dt);
+  applyOrientation();
+  renderer.render(scene, camera);
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+window.__dbg = { camera, holder, setOri: (a, b, g) => { ori = { alpha: a, beta: b, gamma: g }; } };
 </script>
 </body>
 </html>
