@@ -16,7 +16,14 @@
   #ui { position: fixed; left: 0; top: 0; pointer-events: none; transform-origin: 0 0; overflow: hidden; }
   /* 放置按钮在画面最下方正中 */
   .side { position: absolute; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-    width: 190px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+    width: 320px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  .row { display: flex; align-items: center; justify-content: center; gap: 14px; }
+  #place { width: 190px; }
+  /* 左右移动按钮：按住不放，山一直往那边挪 */
+  .mv { pointer-events: auto; visibility: hidden; width: 52px; height: 52px; border: 0; border-radius: 50%; font-size: 20px;
+    background: rgba(0,0,0,.45); color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.3); -webkit-tap-highlight-color: transparent; }
+  .mv.on { visibility: visible; }
+  .mv:active { background: rgba(42,127,134,.85); }
   #msg { font-size: 13px; line-height: 1.5; padding: 7px 11px; border-radius: 8px; background: rgba(0,0,0,.5); text-align: center; }
   #msg:empty { display: none; }
   #place { pointer-events: auto; border: 0; border-radius: 999px; padding: 13px 0; font: inherit; font-size: 17px; font-weight: 600;
@@ -36,7 +43,7 @@
 <div id="ui">
   <div id="wm"></div>
   <button id="startcam">点击开启相机</button>
-  <div class="side"><div id="msg"></div><button id="place" disabled>模型加载中…</button></div>
+  <div class="side"><div id="msg"></div><div class="row"><button class="mv" id="ml">◀</button><button id="place" disabled>模型加载中…</button><button class="mv" id="mr">▶</button></div></div>
 </div>
 <script type="module">
 import * as THREE from './lib/three.module.js';
@@ -44,9 +51,13 @@ import { GLTFLoader } from './lib/GLTFLoader.js';
 import { DRACOLoader } from './lib/DRACOLoader.js';
 
 const $ = (id) => document.getElementById(id);
-const video = $('cam'), msg = $('msg'), place = $('place'), startcam = $('startcam'), ui = $('ui');
+const video = $('cam'), msg = $('msg'), place = $('place'), startcam = $('startcam'), ui = $('ui'), ml = $('ml'), mr = $('mr');
+// 微信里手指上下滑会被当成下拉网页（露出"此网页由…提供"），把手势吃掉、山拖不动：整页禁止默认滑动
+document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', (e) => e.preventDefault());
 $('wm').innerHTML = '<span>星界智教 未完成作品</span>'.repeat(60);
 const HINT_AIM = '';  // 不显示操作提示小字
+const MODEL_LITE = 'qljs_v9_lite.glb', MODEL_FULL = 'qljs_v9.glb';
 
 // ---------------- 横屏界面：浏览器横过来就正常排；还停在竖屏时，按手机往哪边横着转界面
 let rot = 90;   // 竖屏窗口里界面转的角度：90（手机向左横）或 -90（向右横）
@@ -116,8 +127,12 @@ aim.visible = false;
 scene.add(aim);
 
 const draco = new DRACOLoader().setDecoderPath('./lib/draco/');
-new GLTFLoader().setDRACOLoader(draco).load('qljs_v8.glb', (gltf) => {
+const loader = new GLTFLoader().setDRACOLoader(draco);
+// 先下一个约 1.6MB 的预览版，能马上放出来看；高清版（约 4.6MB）在后台接着下，下好了原地换上
+function useModel(gltf) {
+  if (model) holder.remove(model);
   model = gltf.scene;
+  waterMaps.length = 0;
   model.traverse((o) => {
     if (!o.isMesh) return;
     const k = WATER_SCROLL[o.name];
@@ -125,15 +140,21 @@ new GLTFLoader().setDRACOLoader(draco).load('qljs_v8.glb', (gltf) => {
     if (o.material.transparent) { o.renderOrder = 2; o.material.depthWrite = false; }
   });
   holder.add(model);
+  const t = mixer ? mixer.time : 0;
   mixer = new THREE.AnimationMixer(model);
   for (const clip of gltf.animations) mixer.clipAction(clip).play();
-  loaded = true;
-  place.disabled = false;
-  place.textContent = '放置';
-  if (video.srcObject) msg.textContent = HINT_AIM;
-}, (e) => {
-  if (e.total) place.textContent = `模型加载中 ${Math.round(e.loaded / e.total * 100)}%`;
-}, () => { place.textContent = '模型加载失败，请刷新'; });
+  mixer.setTime(t);
+  if (!loaded) {
+    loaded = true;
+    place.disabled = false;
+    place.textContent = holder.visible ? '重新选位置' : '放置';
+    if (video.srcObject) msg.textContent = HINT_AIM;
+  }
+}
+let fullDone = false;
+loader.load(MODEL_LITE, (g) => { if (!fullDone) useModel(g); loader.load(MODEL_FULL, (g2) => { fullDone = true; useModel(g2); }); },
+  (e) => { if (e.total && !loaded) place.textContent = `模型加载中 ${Math.round(e.loaded / e.total * 100)}%`; },
+  () => loader.load(MODEL_FULL, (g2) => { fullDone = true; useModel(g2); }, null, () => { place.textContent = '模型加载失败，请刷新'; }));
 
 // ---------------- 陀螺仪：手机转动时相机跟着转，放好的模型就固定在原地
 let ori = null;
@@ -213,9 +234,11 @@ function placeAt(p) {
   aim.visible = false;
   place.textContent = '重新选位置';
   msg.textContent = '';
+  ml.classList.add('on'); mr.classList.add('on');
 }
 function startAiming() {
   holder.visible = false;
+  ml.classList.remove('on'); mr.classList.remove('on');
   aim.visible = true;
   place.textContent = '放置';
   msg.textContent = HINT_AIM;
@@ -271,8 +294,17 @@ function startGesture() {
     drag = { u: userXY(p[0]), pos: holder.position.clone(), right, up, mpp };
   } else drag = null;
   // 双指：捏合缩放、拧着转
-  pinch = p.length === 2 ? { d: Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY), s: holder.scale.x,
-    a: Math.atan2(p[1].clientY - p[0].clientY, p[1].clientX - p[0].clientX), r: holder.rotation.y } : null;
+  if (p.length === 2) {
+    // 双指：捏合缩放、拧着转，两指一起平移就把山左右、前后挪
+    const a0 = userXY(p[0]), a1 = userXY(p[1]);
+    const uw = forced() ? innerHeight : innerWidth;
+    pinch = { d: Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY), s: holder.scale.x,
+      a: Math.atan2(p[1].clientY - p[0].clientY, p[1].clientX - p[0].clientX), r: holder.rotation.y,
+      m: [(a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2], pos: holder.position.clone(),
+      right: !forced() ? groundAxis(1, 0) : groundAxis(0, rot === 90 ? -1 : 1),
+      up: !forced() ? groundAxis(0, 1) : groundAxis(rot === 90 ? 1 : -1, 0),
+      mpp: holder.position.distanceTo(camera.position) * 1.1 / uw };
+  } else pinch = null;
 }
 cvs.addEventListener('pointermove', (e) => {
   if (!pts.has(e.pointerId) || !holder.visible) return;
@@ -288,14 +320,28 @@ cvs.addEventListener('pointermove', (e) => {
     holder.scale.setScalar(THREE.MathUtils.clamp(pinch.s * d / pinch.d, 0.5, 12));
     const a = Math.atan2(p[1].clientY - p[0].clientY, p[1].clientX - p[0].clientX);
     holder.rotation.y = pinch.r - (a - pinch.a);
+    const a0 = userXY(p[0]), a1 = userXY(p[1]);
+    const mx = (a0[0] + a1[0]) / 2, my = (a0[1] + a1[1]) / 2;
+    holder.position.copy(pinch.pos).addScaledVector(pinch.right, (mx - pinch.m[0]) * pinch.mpp)
+      .addScaledVector(pinch.up, (pinch.m[1] - my) * pinch.mpp * 1.5);
   }
 });
 
+// ◀ ▶ 按住不放：山沿人眼里的左右方向一直挪（约 4 秒挪过一整座山宽）
+let hold = 0;
+for (const [b, dir] of [[ml, -1], [mr, 1]]) {
+  b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); hold = dir; });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => { if (hold === dir) hold = 0; });
+}
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
   if (mixer) mixer.update(dt);
   const t = clock.elapsedTime;
+  if (hold && holder.visible) {
+    const right = !forced() ? groundAxis(1, 0) : groundAxis(0, rot === 90 ? -1 : 1);
+    holder.position.addScaledVector(right, hold * dt * 3.3 * holder.scale.x / 4);
+  }
   for (const [map, [su, sv]] of waterMaps) map.offset.set((-t * su) % 1, (-t * sv) % 1);
   applyOrientation();
   if (loaded && !holder.visible) {
@@ -316,7 +362,7 @@ function onResize() {
 addEventListener('resize', onResize);
 addEventListener('orientationchange', () => setTimeout(onResize, 300));
 if (screen.orientation) screen.orientation.addEventListener('change', () => setTimeout(onResize, 300));
-window.__dbg = { camera, holder, aim, setOri: (a, b, g) => { ori = { alpha: a, beta: b, gamma: g }; if (forced()) { rot = g > 40 ? -90 : g < -40 ? 90 : rot; layoutUI(); } } };
+window.__dbg = { camera, holder, aim, setHold: (v) => { hold = v; }, setOri: (a, b, g) => { ori = { alpha: a, beta: b, gamma: g }; if (forced()) { rot = g > 40 ? -90 : g < -40 ? 90 : rot; layoutUI(); } } };
 </script>
 </body>
 </html>
