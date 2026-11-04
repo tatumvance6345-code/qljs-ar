@@ -102,7 +102,8 @@ holder.visible = false;
 scene.add(holder);
 let model, mixer, loaded = false;
 // 水纹、水光贴图顺流慢慢滚动（每秒走多少个贴图周期）；水面网格不动，岸边不跟着晃
-const WATER_SCROLL = { '水纹1': [0.22, 0.03], '水纹2': [0.16, -0.025], '水光层': [0.14, 0.01] };
+// 远处的云带也顺着一个方向慢慢飘
+const WATER_SCROLL = { '水纹1': [0.22, 0.03], '水纹2': [0.16, -0.025], '水光层': [0.14, 0.01], '远景群山1': [0.006, 0], '远景群山2': [-0.004, 0] };
 const waterMaps = [];
 
 // 地面上的放置圆圈：跟着手机对准的位置走
@@ -115,12 +116,12 @@ aim.visible = false;
 scene.add(aim);
 
 const draco = new DRACOLoader().setDecoderPath('./lib/draco/');
-new GLTFLoader().setDRACOLoader(draco).load('qljs_v5.glb', (gltf) => {
+new GLTFLoader().setDRACOLoader(draco).load('qljs_v6.glb', (gltf) => {
   model = gltf.scene;
   model.traverse((o) => {
     if (!o.isMesh) return;
     const k = WATER_SCROLL[o.name];
-    if (k && o.material.map) waterMaps.push([o.material.map, k]);
+    if (k && o.material.map) { o.material.map.wrapS = THREE.RepeatWrapping; o.material.map.needsUpdate = true; waterMaps.push([o.material.map, k]); }
     if (o.material.transparent) { o.renderOrder = 2; o.material.depthWrite = false; }
   });
   holder.add(model);
@@ -232,8 +233,19 @@ place.onclick = async (e) => {
 let drag = null, pinch = null, downAt = null;
 const pts = new Map();
 const cvs = renderer.domElement;
-// 人眼里的"左右"：界面转了 90° 时是屏幕的上下方向
-const userX = (p) => (!forced() ? p.clientX : rot === 90 ? p.clientY : -p.clientY);
+// 人眼里的横屏坐标（界面转了 90° 时由屏幕坐标换算）
+function userXY(p) {
+  if (!forced()) return [p.clientX, p.clientY];
+  return rot === 90 ? [p.clientY, innerWidth - p.clientX] : [innerHeight - p.clientY, p.clientX];
+}
+// 人眼里的"右"和"上"在相机里对应的方向（界面转了 90° 时相机画面也是侧着的）
+const tmpV = new THREE.Vector3();
+function groundAxis(lx, ly) {
+  tmpV.set(lx, ly, 0).applyQuaternion(camera.quaternion);
+  tmpV.y = 0;
+  if (tmpV.lengthSq() < 1e-6) camera.getWorldDirection(tmpV).setY(0);
+  return tmpV.normalize().clone();
+}
 cvs.addEventListener('pointerdown', (e) => {
   pts.set(e.pointerId, e); cvs.setPointerCapture(e.pointerId); startGesture();
   downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
@@ -250,17 +262,32 @@ cvs.addEventListener('pointerup', async (e) => {
 cvs.addEventListener('pointercancel', (e) => { pts.delete(e.pointerId); startGesture(); });
 function startGesture() {
   const p = [...pts.values()];
-  drag = p.length === 1 ? { x: userX(p[0]), r: holder.rotation.y } : null;
-  pinch = p.length === 2 ? { d: Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY), s: holder.scale.x } : null;
+  if (p.length === 1) {
+    // 单指：在地面上拖着山左右、前后挪
+    const right = !forced() ? groundAxis(1, 0) : groundAxis(0, rot === 90 ? -1 : 1);
+    const up = !forced() ? groundAxis(0, 1) : groundAxis(rot === 90 ? 1 : -1, 0);
+    const uw = forced() ? innerHeight : innerWidth;
+    const mpp = holder.position.distanceTo(camera.position) * 1.1 / uw;  // 手指挪 1 像素，山挪多少米
+    drag = { u: userXY(p[0]), pos: holder.position.clone(), right, up, mpp };
+  } else drag = null;
+  // 双指：捏合缩放、拧着转
+  pinch = p.length === 2 ? { d: Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY), s: holder.scale.x,
+    a: Math.atan2(p[1].clientY - p[0].clientY, p[1].clientX - p[0].clientX), r: holder.rotation.y } : null;
 }
 cvs.addEventListener('pointermove', (e) => {
   if (!pts.has(e.pointerId) || !holder.visible) return;
   pts.set(e.pointerId, e);
   const p = [...pts.values()];
-  if (drag && p.length === 1) holder.rotation.y = drag.r + (userX(p[0]) - drag.x) / Math.max(innerWidth, innerHeight) * Math.PI * 1.5;
+  if (drag && p.length === 1) {
+    const [ux, uy] = userXY(p[0]);
+    const dx = (ux - drag.u[0]) * drag.mpp, dy = (drag.u[1] - uy) * drag.mpp * 1.5;
+    holder.position.copy(drag.pos).addScaledVector(drag.right, dx).addScaledVector(drag.up, dy);
+  }
   if (pinch && p.length === 2) {
     const d = Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY);
     holder.scale.setScalar(THREE.MathUtils.clamp(pinch.s * d / pinch.d, 0.5, 12));
+    const a = Math.atan2(p[1].clientY - p[0].clientY, p[1].clientX - p[0].clientX);
+    holder.rotation.y = pinch.r - (a - pinch.a);
   }
 });
 
