@@ -116,7 +116,7 @@ aim.visible = false;
 scene.add(aim);
 
 const draco = new DRACOLoader().setDecoderPath('./lib/draco/');
-new GLTFLoader().setDRACOLoader(draco).load('qljs_v6.glb', (gltf) => {
+new GLTFLoader().setDRACOLoader(draco).load('qljs_v7.glb', (gltf) => {
   model = gltf.scene;
   model.traverse((o) => {
     if (!o.isMesh) return;
